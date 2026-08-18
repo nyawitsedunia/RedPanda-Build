@@ -1,0 +1,375 @@
+name: Build RedPanda GKI Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_variant:
+        description: "Select build variant"
+        required: true
+        default: "ReSukiSU"
+        type: choice
+        options:
+          - ReSukiSU
+          - none
+      clang_choice:
+        description: "Select Clang toolchain"
+        required: true
+        default: "Neutron"
+        type: choice
+        options:
+          - Neutron
+      kernel_branch:
+        description: "Select kernel branch to build"
+        required: true
+        default: "6.6-sd"
+        type: choice
+        options:
+          - 6.6-sd
+          - 6.6-lts
+      build_stock:
+        description: 'Build stock kernel'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  TZ: 'Asia/Medan'
+  KERNEL_REPO: https://github.com/Artecxyz/RedPanda-kernel.git
+  KERNEL_DEFCONFIG: redpanda_defconfig
+  KBUILD_BUILD_USER: ArtecX
+  KBUILD_BUILD_HOST: xyz
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+      CCACHE_MAXSIZE: 8G
+      
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v7
+        
+      # - name: Free disk space
+      #   uses: jlumbroso/free-disk-space@main
+      #   with:
+      #     tool-cache: false
+      #     android: true
+      #     dotnet: true
+      #     haskell: true
+      #     large-packages: true
+      #     docker-images: true
+      #     swap-storage: false
+
+      - name: Free Disk Space
+        uses: endersonmenezes/free-disk-space@v3  # Use @main for latest, @v3 for stable
+        with:
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+          remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* *llvm* mysql* dotnet-sdk-*"
+          remove_packages_one_command: true
+          remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle"
+          rm_cmd: "rmz"  # Use 'rmz' for faster deletion (default: 'rm')
+          rmz_version: "3.1.1"  # Required when rm_cmd is 'rmz'
+          testing: false
+        
+      - name: Create and Enable 3G Swap
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 3G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Setup ccache environment and workspace paths
+        run: |
+          echo "KERNEL_DIR=$GITHUB_WORKSPACE/kernel_workspace" >> "$GITHUB_ENV"
+          echo "CLANG_DIR=$GITHUB_WORKSPACE/toolchains/clang" >> "$GITHUB_ENV"
+          
+          echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.kernel_branch }}" >> $GITHUB_ENV
+          mkdir -p "$HOME/.ccache_${{ github.event.inputs.kernel_branch }}"
+          echo "set: $HOME/.ccache_${{ github.event.inputs.kernel_branch }}"
+          
+      - name: "📦 Cache & Install Dependencies"
+        uses: awalsh128/cache-apt-pkgs-action@latest 
+        with: 
+          packages: python3 git curl ccache libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix tzdata
+          execute_install_scripts: true
+          
+      - name: Set timezone
+        run: |
+          sudo timedatectl set-timezone Asia/Medan
+          date
+
+      - name: Clone kernel source
+        run: |
+          git clone --depth=1 "$KERNEL_REPO" -b "${{ github.event.inputs.kernel_branch }}" "$GITHUB_WORKSPACE/kernel_workspace"
+
+      - name: Cache Clang toolchain
+        id: clang-cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.CLANG_DIR }}
+          key: clang-${{ github.event.inputs.clang_choice }}
+
+      - name: Download & Setup Clang
+        if: steps.clang-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$CLANG_DIR"
+          cd "$CLANG_DIR"
+          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
+          chmod +x antman
+          ./antman -S
+
+      - name: Show Clang version
+        run: |
+          echo "=== Clang version ==="
+          "$CLANG_DIR/bin/clang" --version
+          echo "=== LLVM/ld.lld version ==="
+          "$CLANG_DIR/bin/ld.lld" --version || true
+
+      - name: Restore Ccache
+        id: restore-ccache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ github.event.inputs.kernel_branch }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ github.event.inputs.kernel_branch }}-
+
+      - name: Initialize Ccache
+        run: |
+          INIT_FLAG="${{ env.CCACHE_DIR }}/.ccache_initialized"
+          if command -v ccache >/dev/null 2>&1; then
+            if [ ! -f "$INIT_FLAG" ]; then
+              echo "初始化 ccache (${{ env.CCACHE_DIR }})..."
+              mkdir -p "${{ env.CCACHE_DIR }}"
+              ccache -M ${{ env.CCACHE_MAXSIZE }}
+              touch "$INIT_FLAG"
+              echo "✅ ccache initialization complete"
+            else
+              echo "✅ ccache already initialized, skipping."
+            fi
+          else
+            echo "❌ ccache not installed, skipping."
+          fi
+          ccache -s
+          
+      - name: Setup AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/Artecxyz/AnyKernel3.git "$GITHUB_WORKSPACE/AnyKernel3"
+          echo "AnyKernel3 setup complete"
+
+      - name: Build kernel (stock)
+        if: github.event.inputs.build_stock == 'true' || github.event.inputs.build_variant == 'none'
+        run: |
+          export PATH="$CLANG_DIR/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export KBUILD_COMPILER_STRING="$($CLANG_DIR/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
+          cd "$KERNEL_DIR"
+          OUT_DIR="$KERNEL_DIR/out-stock"
+
+          DEFCONFIG="arch/arm64/configs/$KERNEL_DEFCONFIG"
+          sed -i "s/^CONFIG_LTO_NONE=y/CONFIG_LTO_CLANG_THIN=y/" "$DEFCONFIG"
+          sed -i "/^# CONFIG_LTO_CLANG_THIN is not set/d" "$DEFCONFIG"
+          printf "\nCONFIG_LTO=y\nCONFIG_LTO_CLANG=y\n" >> "$DEFCONFIG"
+
+          make O="$OUT_DIR" CC="ccache clang" HOSTCC="ccache gcc" LLVM=1 LLVM_IAS=1 LTO=thin KCFLAGS="-w" KBUILD_BUILD_USER=$KBUILD_BUILD_USER KBUILD_BUILD_HOST=$KBUILD_BUILD_HOST $KERNEL_DEFCONFIG
+          make -j$(nproc --all) O="$OUT_DIR" CC="ccache clang" HOSTCC="ccache gcc" LLVM=1 LLVM_IAS=1 LTO=thin KCFLAGS="-w" KBUILD_BUILD_USER=$KBUILD_BUILD_USER KBUILD_BUILD_HOST=$KBUILD_BUILD_HOST
+          ccache -s
+
+      - name: Package stock build into AnyKernel zip
+        if: github.event.inputs.build_stock == 'true' || github.event.inputs.build_variant == 'none'
+        run: |
+          set -euo pipefail
+          cd "$KERNEL_DIR"
+          OUT_DIR="$KERNEL_DIR/out-stock"
+          ZIMAGE_DIR="$OUT_DIR/arch/arm64/boot"
+          TIME=$(date "+%Y%m%d-%H%M%S")
+          TEMP_ANY_KERNEL_DIR="$KERNEL_DIR/anykernel_temp_stock"
+
+          rm -rf "$TEMP_ANY_KERNEL_DIR"
+          cp -r "$GITHUB_WORKSPACE/AnyKernel3" "$TEMP_ANY_KERNEL_DIR"
+          rm -rf "$TEMP_ANY_KERNEL_DIR/.git"
+
+          if [ -f "$ZIMAGE_DIR/Image.gz-dtb" ]; then
+            cp -v "$ZIMAGE_DIR/Image.gz-dtb" "$TEMP_ANY_KERNEL_DIR/"
+          elif [ -f "$ZIMAGE_DIR/Image.gz" ]; then
+            cp -v "$ZIMAGE_DIR/Image.gz" "$TEMP_ANY_KERNEL_DIR/"
+          elif [ -f "$ZIMAGE_DIR/Image" ]; then
+            cp -v "$ZIMAGE_DIR/Image" "$TEMP_ANY_KERNEL_DIR/"
+          else
+            echo "ERROR: No kernel image found in $ZIMAGE_DIR"
+            ls -la "$ZIMAGE_DIR" || true
+            exit 1
+          fi
+
+          ZIP_NAME="RedPanda-Kernel-Stock-$TIME.zip"
+          cd "$TEMP_ANY_KERNEL_DIR"
+          zip -r9 "$KERNEL_DIR/$ZIP_NAME" ./*
+          cd ..
+          rm -rf "$TEMP_ANY_KERNEL_DIR"
+
+          echo "STOCK_ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+
+      - name: Upload stock zip artifact
+        if: github.event.inputs.build_stock == 'true' || github.event.inputs.build_variant == 'none'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.STOCK_ZIP_NAME }}
+          path: kernel_workspace/${{ env.STOCK_ZIP_NAME }}
+          retention-days: 7
+
+      - name: Setup ReSukiSU
+        if: github.event.inputs.build_variant != 'none'
+        run: |
+          set -euo pipefail
+          echo "=== Setting up ReSukiSU ==="
+          cd "$KERNEL_DIR"
+          [ -d "common" ] && cd common
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          echo "ReSukiSU setup complete"
+
+      - name: Setup SUSFS
+        if: github.event.inputs.build_variant != 'none'
+        run: |
+          set -euo pipefail
+          SUSFS_BRANCH="gki-android15-6.6"
+          echo "=== Setting up SUSFS (branch: $SUSFS_BRANCH) ==="
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b "$SUSFS_BRANCH" "$GITHUB_WORKSPACE/susfs4ksu"
+          cd "$KERNEL_DIR"
+          [ -d "common" ] && cd common
+          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/"* fs/
+          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/"* include/linux/
+          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch" .
+          patch -p1 < 50_add_susfs_in_gki-android15-6.6.patch
+          echo "SUSFS setup complete"
+
+      - name: Enable Kernel Configs
+        if: github.event.inputs.build_variant != 'none'
+        run: |
+          set -euo pipefail
+          cd "$KERNEL_DIR"
+          [ -d "common" ] && cd common
+
+          DEFCONFIG="arch/arm64/configs/$KERNEL_DEFCONFIG"
+          if [ ! -f "$DEFCONFIG" ]; then
+            echo "ERROR: $DEFCONFIG not found"
+            exit 1
+          fi
+
+          sed -i "/^CONFIG_LTO_NONE=y/d;/^# CONFIG_LTO_NONE is not set/d" "$DEFCONFIG"
+
+          set_config() {
+            local key="$1"
+            local value="$2"
+            sed -i "/^${key}=/d" "$DEFCONFIG"
+            sed -i "/^# ${key} is not set/d" "$DEFCONFIG"
+            echo "${key}=${value}" >> "$DEFCONFIG"
+          }
+
+          set_config CONFIG_KSU y
+          set_config CONFIG_KALLSYMS y
+          set_config CONFIG_KALLSYMS_ALL y
+
+          set_config CONFIG_LTO y
+          set_config CONFIG_LTO_CLANG y
+          set_config CONFIG_LTO_CLANG_THIN y
+
+          set_config CONFIG_KSU_SUSFS y
+          set_config CONFIG_KSU_SUSFS_SUS_PATH y
+          set_config CONFIG_KSU_SUSFS_SUS_MOUNT y
+          set_config CONFIG_KSU_SUSFS_SUS_KSTAT y
+          set_config CONFIG_KSU_SUSFS_SPOOF_UNAME y
+          set_config CONFIG_KSU_SUSFS_ENABLE_LOG y
+          set_config CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS y
+          set_config CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG y
+          set_config CONFIG_KSU_SUSFS_OPEN_REDIRECT y
+          set_config CONFIG_KSU_SUSFS_SUS_MAP y
+
+          echo "Kernel configs enabled in $KERNEL_DEFCONFIG"
+
+      - name: Build kernel (KernelSU+SUSFS)
+        if: github.event.inputs.build_variant != 'none'
+        run: |
+          export PATH="$CLANG_DIR/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export KBUILD_COMPILER_STRING="$($CLANG_DIR/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
+          cd "$KERNEL_DIR"
+          OUT_DIR="$KERNEL_DIR/out-ksu-susfs"
+          make O="$OUT_DIR" CC="ccache clang" HOSTCC="ccache gcc" LLVM=1 LLVM_IAS=1 LTO=thin KCFLAGS="-w" KBUILD_BUILD_USER=$KBUILD_BUILD_USER KBUILD_BUILD_HOST=$KBUILD_BUILD_HOST $KERNEL_DEFCONFIG
+          make -j$(nproc --all) O="$OUT_DIR" CC="ccache clang" HOSTCC="ccache gcc" LLVM=1 LLVM_IAS=1 LTO=thin KCFLAGS="-w" KBUILD_BUILD_USER=$KBUILD_BUILD_USER KBUILD_BUILD_HOST=$KBUILD_BUILD_HOST
+          ccache -s
+
+      - name: Check ThinLTO status
+        run: |
+          for DIR in "$KERNEL_DIR"/out-*; do
+            [ -f "$DIR/.config" ] || continue
+            echo "=== $(basename "$DIR") ==="
+            grep -E "^CONFIG_LTO_NONE|^CONFIG_LTO_CLANG" "$DIR/.config" || echo "No LTO config found"
+            if grep -q "^CONFIG_LTO_CLANG_THIN=y" "$DIR/.config"; then
+              echo "RESULT: ThinLTO ENABLED"
+            else
+              echo "RESULT: ThinLTO NOT enabled"
+            fi
+          done
+
+      - name: Make AnyKernel3 (KernelSU+SUSFS)
+        if: github.event.inputs.build_variant != 'none'
+        run: |
+          set -euo pipefail
+          cd "$KERNEL_DIR"
+          OUT_DIR="$KERNEL_DIR/out-ksu-susfs"
+          ZIMAGE_DIR="$OUT_DIR/arch/arm64/boot"
+          TIME=$(date "+%Y%m%d-%H%M%S")
+          TEMP_ANY_KERNEL_DIR="$KERNEL_DIR/anykernel_temp_ksu"
+
+          rm -rf "$TEMP_ANY_KERNEL_DIR"
+          cp -r "$GITHUB_WORKSPACE/AnyKernel3" "$TEMP_ANY_KERNEL_DIR"
+          rm -rf "$TEMP_ANY_KERNEL_DIR/.git"
+
+          if [ -f "$ZIMAGE_DIR/Image.gz-dtb" ]; then
+            cp -v "$ZIMAGE_DIR/Image.gz-dtb" "$TEMP_ANY_KERNEL_DIR/"
+          elif [ -f "$ZIMAGE_DIR/Image.gz" ]; then
+            cp -v "$ZIMAGE_DIR/Image.gz" "$TEMP_ANY_KERNEL_DIR/"
+          elif [ -f "$ZIMAGE_DIR/Image" ]; then
+            cp -v "$ZIMAGE_DIR/Image" "$TEMP_ANY_KERNEL_DIR/"
+          else
+            echo "ERROR: No kernel image found in $ZIMAGE_DIR"
+            ls -la "$ZIMAGE_DIR" || true
+            exit 1
+          fi
+
+          ZIP_NAME="RedPanda-Kernel-KSU-SUSFS-$TIME.zip"
+          cd "$TEMP_ANY_KERNEL_DIR"
+          zip -r9 "$KERNEL_DIR/$ZIP_NAME" ./*
+          cd ..
+          rm -rf "$TEMP_ANY_KERNEL_DIR"
+
+          echo "KSU_ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
+
+      - name: Upload zip artifact (KernelSU+SUSFS)
+        if: github.event.inputs.build_variant != 'none'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.KSU_ZIP_NAME }}
+          path: kernel_workspace/${{ env.KSU_ZIP_NAME }}
+          retention-days: 7
+          
+      - name: Save Ccache
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ github.event.inputs.kernel_branch }}-${{ github.run_id }}
