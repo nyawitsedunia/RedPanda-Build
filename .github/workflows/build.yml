@@ -93,7 +93,8 @@ jobs:
           
       - name: Set timezone
         run: |
-          sudo timedatectl set-timezone Asia/Medan
+          sudo ln -sf /usr/share/zoneinfo/Asia/Medan /etc/localtime
+          echo "Asia/Medan" | sudo tee /etc/timezone > /dev/null
           date
 
       - name: Clone kernel source
