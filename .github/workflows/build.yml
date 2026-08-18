@@ -37,7 +37,7 @@ permissions:
   contents: write
 
 env:
-  TZ: 'Asia/Medan'
+  TZ: 'Asia/Jakarta'
   KERNEL_REPO: https://github.com/Artecxyz/RedPanda-kernel.git
   KERNEL_DEFCONFIG: redpanda_defconfig
   KBUILD_BUILD_USER: ArtecX
@@ -88,15 +88,9 @@ jobs:
       - name: "📦 Cache & Install Dependencies"
         uses: awalsh128/cache-apt-pkgs-action@latest 
         with: 
-          packages: python3 git curl ccache libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix tzdata
+          packages: python3 git curl ccache libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix
           execute_install_scripts: true
           
-      - name: Set timezone
-        run: |
-          sudo ln -sf /usr/share/zoneinfo/Asia/Medan /etc/localtime
-          echo "Asia/Medan" | sudo tee /etc/timezone > /dev/null
-          date
-
       - name: Clone kernel source
         run: |
           git clone --depth=1 "$KERNEL_REPO" -b "${{ github.event.inputs.kernel_branch }}" "$GITHUB_WORKSPACE/kernel_workspace"
@@ -183,7 +177,7 @@ jobs:
           cd "$KERNEL_DIR"
           OUT_DIR="$KERNEL_DIR/out-stock"
           ZIMAGE_DIR="$OUT_DIR/arch/arm64/boot"
-          TIME=$(date "+%Y%m%d-%H%M%S")
+          TIME=$(date "+%Y%m%d-%H%M")
           TEMP_ANY_KERNEL_DIR="$KERNEL_DIR/anykernel_temp_stock"
 
           rm -rf "$TEMP_ANY_KERNEL_DIR"
@@ -321,7 +315,7 @@ jobs:
           cd "$KERNEL_DIR"
           OUT_DIR="$KERNEL_DIR/out-ksu-susfs"
           ZIMAGE_DIR="$OUT_DIR/arch/arm64/boot"
-          TIME=$(date "+%Y%m%d-%H%M%S")
+          TIME=$(date "+%Y%m%d-%H%M")
           TEMP_ANY_KERNEL_DIR="$KERNEL_DIR/anykernel_temp_ksu"
 
           rm -rf "$TEMP_ANY_KERNEL_DIR"
