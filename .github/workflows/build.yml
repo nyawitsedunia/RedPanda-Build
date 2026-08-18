@@ -54,7 +54,7 @@ jobs:
       
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
@@ -102,7 +102,7 @@ jobs:
 
       - name: Cache Clang toolchain
         id: clang-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.CLANG_DIR }}
           key: clang-${{ github.event.inputs.clang_choice }}
@@ -125,7 +125,7 @@ jobs:
 
       - name: Restore Ccache
         id: restore-ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ github.event.inputs.kernel_branch }}-${{ github.run_id }}
@@ -211,7 +211,7 @@ jobs:
 
       - name: Upload stock zip artifact
         if: github.event.inputs.build_stock == 'true' || github.event.inputs.build_variant == 'none'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.STOCK_ZIP_NAME }}
           path: kernel_workspace/${{ env.STOCK_ZIP_NAME }}
@@ -349,14 +349,14 @@ jobs:
 
       - name: Upload zip artifact (KernelSU+SUSFS)
         if: github.event.inputs.build_variant != 'none'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.KSU_ZIP_NAME }}
           path: kernel_workspace/${{ env.KSU_ZIP_NAME }}
           retention-days: 7
           
       - name: Save Ccache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ github.event.inputs.kernel_branch }}-${{ github.run_id }}
