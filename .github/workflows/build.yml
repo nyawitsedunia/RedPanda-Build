@@ -24,9 +24,7 @@ on:
         default: "6.6-sd"
         type: choice
         options:
-          - 6.6-sd
           - 6.6-lts
-          - 6.6-test
       build_stock:
         description: 'Build stock kernel'
         required: false
