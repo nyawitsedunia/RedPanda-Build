@@ -233,12 +233,11 @@ jobs:
       - name: 🔧 Setup Patches
         if: github.event.inputs.build_variant != 'none'
         run: |
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android15-6.6 "$GITHUB_WORKSPACE/susfs4ksu"
           cd "$KERNEL_DIR"
-          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android15-6.6
-
-          cp susfs4ksu/kernel_patches/fs/* ./common/fs/
-          cp susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
-          cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch ./common/
+          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/"* ./common/fs/
+          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/"* ./common/include/linux/
+          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch" ./common/
 
           [ -d "common" ] && cd common
           echo "📦 Applying 50_ with --forward (by-design rejects skip cleanly)..."
