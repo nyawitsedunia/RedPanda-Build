@@ -53,9 +53,17 @@ jobs:
       CCACHE_MAXSIZE: 8G
       
     steps:
-      - name: Checkout Repository
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v7
 
+      # - name: 🧠 Add swap space (for LTO link)
+      #   run: |
+      #     sudo fallocate -l 16G /mnt/swap_lto || sudo dd if=/dev/zero of=/mnt/swap_lto bs=1M count=16384
+      #     sudo chmod 600 /mnt/swap_lto
+      #     sudo mkswap /mnt/swap_lto
+      #     sudo swapon /mnt/swap_lto
+      #     echo "── swap after ──"; free -h
+          
       - name: Create and Enable 3G Swap
         run: |
           sudo swapoff -a || true
@@ -65,14 +73,15 @@ jobs:
           sudo swapon /swapfile
           free -h
 
-      - name: Setup ccache environment and workspace paths
+      - name: ⚙️ Configure CCache Directory
         run: |
           echo "KERNEL_DIR=$GITHUB_WORKSPACE/kernel_workspace" >> "$GITHUB_ENV"
           echo "CLANG_DIR=$GITHUB_WORKSPACE/toolchains/clang" >> "$GITHUB_ENV"
           
           echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.kernel_branch }}" >> $GITHUB_ENV
+          # echo "LDCACHE_DIR=$GITHUB_WORKSPACE/ldcache_${{ github.event.inputs.kernel_branch }}" >> $GITHUB_ENV
+          # mkdir -p "$HOME/ldcache_${{ github.event.inputs.kernel_branch }}"
           mkdir -p "$HOME/.ccache_${{ github.event.inputs.kernel_branch }}"
-          echo "set: $HOME/.ccache_${{ github.event.inputs.kernel_branch }}"
           
       - name: "📦 Cache & Install Dependencies"
         uses: awalsh128/cache-apt-pkgs-action@latest 
@@ -115,7 +124,15 @@ jobs:
           key: ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ github.event.inputs.kernel_branch }}-${{ github.run_id }}
           restore-keys: |
             ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ github.event.inputs.kernel_branch }}-
-
+            
+      - name: Restore LTO Cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.LDCACHE_DIR }}
+          key: lto-cache-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            lto-cache-${{ runner.os }}-${{ github.ref_name }}-
+            
       - name: Initialize Ccache
         run: |
           INIT_FLAG="${{ env.CCACHE_DIR }}/.ccache_initialized"
@@ -201,45 +218,45 @@ jobs:
           path: kernel_workspace/${{ env.STOCK_ZIP_NAME }}
           retention-days: 7
 
-      - name: Setup ReSukiSU
-        if: github.event.inputs.build_variant != 'none'
-        run: |
-          set -euo pipefail
-          echo "=== Setting up ReSukiSU ==="
-          cd "$KERNEL_DIR"
-          [ -d "common" ] && cd common
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-          echo "ReSukiSU setup complete"
-
-      - name: Setup SUSFS
-        if: github.event.inputs.build_variant != 'none'
-        run: |
-          set -euo pipefail
-          SUSFS_BRANCH="gki-android15-6.6"
-          echo "=== Setting up SUSFS (branch: $SUSFS_BRANCH) ==="
-          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b "$SUSFS_BRANCH" "$GITHUB_WORKSPACE/susfs4ksu"
-          cd "$KERNEL_DIR"
-          [ -d "common" ] && cd common
-          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/"* fs/
-          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/"* include/linux/
-          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch" .
-          patch -p1 < 50_add_susfs_in_gki-android15-6.6.patch
-          echo "SUSFS setup complete"
-
-      - name: Enable Kernel Configs
+      - name: ⚡ Setup ReSukiSU
         if: github.event.inputs.build_variant != 'none'
         run: |
           set -euo pipefail
           cd "$KERNEL_DIR"
           [ -d "common" ] && cd common
+          echo "🛠️ Setting up ReSukiSU (main)..."
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+          cd KernelSU
+          KSU_VERSION_COUNT=$(git rev-list --count HEAD)
+          export KSUVER=$(expr $KSU_VERSION_COUNT + 30700)
+          echo "KSUVER=$KSUVER" >> $GITHUB_ENV
+          echo "✅ ReSukiSU $(git rev-parse --short HEAD) (ver $KSUVER)"
 
-          DEFCONFIG="arch/arm64/configs/$KERNEL_DEFCONFIG"
+      - name: 🔧 Setup Patches
+        if: github.event.inputs.build_variant != 'none'
+        run: |
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android15-6.6
+          cd "$KERNEL_DIR"
+          
+          cp susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch ./common/
+
+          [ -d "common" ] && cd common
+          echo "📦 Applying 50_ with --forward (by-design rejects skip cleanly)..."
+          patch -p1 --forward < 50_add_susfs_in_gki-android15-6.6.patch || true
+          echo "✅ SUSFS setup complete"
+
+      - name: ⚙️ Configure Kernel Options
+        if: github.event.inputs.build_variant != 'none'
+        run: |
+          cd "$KERNEL_DIR"
+
+          DEFCONFIG="common/arch/arm64/configs/$KERNEL_DEFCONFIG"
           if [ ! -f "$DEFCONFIG" ]; then
             echo "ERROR: $DEFCONFIG not found"
             exit 1
           fi
-
-          sed -i "/^CONFIG_LTO_NONE=y/d;/^# CONFIG_LTO_NONE is not set/d" "$DEFCONFIG"
 
           set_config() {
             local key="$1"
@@ -248,13 +265,17 @@ jobs:
             sed -i "/^# ${key} is not set/d" "$DEFCONFIG"
             echo "${key}=${value}" >> "$DEFCONFIG"
           }
-
+          
           set_config CONFIG_KSU y
           set_config CONFIG_KALLSYMS y
           set_config CONFIG_KALLSYMS_ALL y
-
-          set_config CONFIG_LTO y
-          set_config CONFIG_LTO_CLANG y
+          set_config CONFIG_KSU_FULL_NAME_FORMAT "v%KSU_VERSION%-%COMMIT_SHA%@artecxyz"
+          
+          set_config CONFIG_HEADERS_INSTALL n
+          set_config CONFIG_LLVM_POLLY y
+          set_config CONFIG_LD_DEAD_CODE_DATA_ELIMINATION y
+          
+          sed -i "/^CONFIG_LTO_NONE=y/d;/^# CONFIG_LTO_NONE is not set/d" "$DEFCONFIG"
           set_config CONFIG_LTO_CLANG_THIN y
 
           set_config CONFIG_KSU_SUSFS y
@@ -268,6 +289,7 @@ jobs:
           set_config CONFIG_KSU_SUSFS_OPEN_REDIRECT y
           set_config CONFIG_KSU_SUSFS_SUS_MAP y
 
+          sed -i 's/check_defconfig//' ./common/build.config.gki
           echo "Kernel configs enabled in $KERNEL_DEFCONFIG"
 
       - name: Build kernel (KernelSU+SUSFS)
@@ -280,7 +302,13 @@ jobs:
           export KBUILD_COMPILER_STRING="$($CLANG_DIR/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
           cd "$KERNEL_DIR"
           OUT_DIR="$KERNEL_DIR/out-ksu-susfs"
-          make O="$OUT_DIR" CC="ccache clang" HOSTCC="ccache gcc" LLVM=1 LLVM_IAS=1 LTO=thin KCFLAGS="-w" KBUILD_BUILD_USER=$KBUILD_BUILD_USER KBUILD_BUILD_HOST=$KBUILD_BUILD_HOST $KERNEL_DEFCONFIG
+
+          # # LTO thin cache wrapper pointing to RAM disk
+          # echo '#!/bin/bash' > ld-wrapper
+          # echo 'ld.lld "$@" --thinlto-cache-dir=$GITHUB_WORKSPACE/ldcache_${{ github.event.inputs.kernel_branch }} --thinlto-jobs=$(($(nproc --all) / 2))' >> ld-wrapper
+          # chmod +x ld-wrapper
+          
+          make -j$(nproc --all) O="$OUT_DIR" CC="ccache clang" HOSTCC="ccache gcc" LLVM=1 LLVM_IAS=1 LTO=thin KCFLAGS="-w" KBUILD_BUILD_USER=$KBUILD_BUILD_USER KBUILD_BUILD_HOST=$KBUILD_BUILD_HOST $KERNEL_DEFCONFIG
           make -j$(nproc --all) O="$OUT_DIR" CC="ccache clang" HOSTCC="ccache gcc" LLVM=1 LLVM_IAS=1 LTO=thin KCFLAGS="-w" KBUILD_BUILD_USER=$KBUILD_BUILD_USER KBUILD_BUILD_HOST=$KBUILD_BUILD_HOST
           ccache -s
 
@@ -344,3 +372,9 @@ jobs:
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ github.event.inputs.kernel_branch }}-${{ github.run_id }}
+
+      # - name: 📦 Save LTO CCache
+      #   uses: actions/cache/save@v6
+      #   with:
+      #     path: ${{ env.LDCACHE_DIR }}
+      #     key: lto-cache-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
