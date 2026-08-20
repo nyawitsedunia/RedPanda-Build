@@ -235,11 +235,11 @@ jobs:
         run: |
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android15-6.6 "$GITHUB_WORKSPACE/susfs4ksu"
           cd "$KERNEL_DIR"
-          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/"* ./common/fs/
-          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/"* ./common/include/linux/
-          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch" ./common/
-
           [ -d "common" ] && cd common
+          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/"* ./fs/
+          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/"* ./include/linux/
+          cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch" .
+
           echo "📦 Applying 50_ with --forward (by-design rejects skip cleanly)..."
           patch -p1 --forward < 50_add_susfs_in_gki-android15-6.6.patch || true
           echo "✅ SUSFS setup complete"
@@ -248,8 +248,9 @@ jobs:
         if: github.event.inputs.build_variant != 'none'
         run: |
           cd "$KERNEL_DIR"
+          [ -d "common" ] && cd common
 
-          DEFCONFIG="common/arch/arm64/configs/$KERNEL_DEFCONFIG"
+          DEFCONFIG="arch/arm64/configs/$KERNEL_DEFCONFIG"
           if [ ! -f "$DEFCONFIG" ]; then
             echo "ERROR: $DEFCONFIG not found"
             exit 1
@@ -286,7 +287,7 @@ jobs:
           set_config CONFIG_KSU_SUSFS_OPEN_REDIRECT y
           set_config CONFIG_KSU_SUSFS_SUS_MAP y
 
-          sed -i 's/check_defconfig//' ./common/build.config.gki
+          ed -i 's/check_defconfig//' ./build.config.gki 2>/dev/null || true
           echo "Kernel configs enabled in $KERNEL_DEFCONFIG"
 
       - name: Build kernel (KernelSU+SUSFS)
