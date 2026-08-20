@@ -125,13 +125,13 @@ jobs:
           restore-keys: |
             ccache-${{ runner.os }}-${{ github.event.inputs.build_variant }}-${{ github.event.inputs.clang_choice }}-${{ github.event.inputs.kernel_branch }}-
             
-      - name: Restore LTO Cache
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ env.LDCACHE_DIR }}
-          key: lto-cache-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            lto-cache-${{ runner.os }}-${{ github.ref_name }}-
+      # - name: Restore LTO Cache
+      #   uses: actions/cache/restore@v6
+      #   with:
+      #     path: ${{ env.LDCACHE_DIR }}
+      #     key: lto-cache-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+      #     restore-keys: |
+      #       lto-cache-${{ runner.os }}-${{ github.ref_name }}-
             
       - name: Initialize Ccache
         run: |
