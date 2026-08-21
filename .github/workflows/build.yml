@@ -36,7 +36,7 @@ permissions:
 
 env:
   TZ: 'Asia/Jakarta'
-  KERNEL_REPO: https://github.com/Artecxyz/RedPanda-kernel.git
+  KERNEL_REPO: https://github.com/Artecxyz/RedPanda-kernels.git
   KERNEL_DEFCONFIG: redpanda_defconfig
   KBUILD_BUILD_USER: ArtecX
   KBUILD_BUILD_HOST: xyz
