@@ -120,12 +120,6 @@ jobs:
           export APT_PACKAGES="python3 git curl ccache libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix kmod libdw-dev elfutils dwarves"
           bash "$GITHUB_WORKSPACE/scripts/cache_apt_pkgs.sh" ~/.apt-pkg-cache
           
-      # - name: "📦 Cache & Install Dependencies"
-      #   uses: awalsh128/cache-apt-pkgs-action@latest 
-      #   with: 
-      #     packages: python3 git curl libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix dwarves
-      #     execute_install_scripts: true
-          
       - name: Cache Clang toolchain
         id: clang-cache
         uses: actions/cache@v6
@@ -317,11 +311,11 @@ jobs:
           set_config CONFIG_LLVM_POLLY y
           set_config CONFIG_LD_DEAD_CODE_DATA_ELIMINATION y
           
-          sed -i "/^CONFIG_LTO_NONE=y/d;/^# CONFIG_LTO_NONE is not set/d" "$DEFCONFIG"
+          sed -i '/^CONFIG_LTO_NONE=y/{ s/^/# /; s/=y$/ is not set/; }' "$DEFCONFIG"
           set_config CONFIG_LTO_CLANG_THIN y
           set_config CONFIG_AUTOFDO_CLANG y
 
-          sed -i "/^CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y/d;/^# CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE is not set/d" "$DEFCONFIG"
+          sed -i '/^CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y/{ s/^/# /; s/=y$/ is not set/; }' "$DEFCONFIG"
           set_config CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3 y
           
           set_config CONFIG_KSU_SUSFS y
@@ -371,7 +365,8 @@ jobs:
             set_config CONFIG_TCP_ECN y
             set_config CONFIG_IPV6_ECN y
             set_config CONFIG_IP_NF_TARGET_ECN y
-
+            set_config CONFIG_DEFAULT_TCP_CONG=bbr
+            
             set_config CONFIG_NET_SCH_FQ_CODEL y 
             set_config CONFIG_NET_SCH_FQ y
             set_config CONFIG_NET_SCH_CODEL y
