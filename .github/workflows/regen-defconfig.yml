@@ -6,21 +6,17 @@ on:
       kernel_repo:
         description: 'URL repo kernel (source penuh tetap dibutuhkan untuk Kconfig)'
         required: false
-        default: 'https://github.com/Artecxyz/RedPanda-kernel.git'
+        default: 'RedPanda-kernel'
       kernel_branch:
         description: 'Branch kernel'
         required: false
         default: 'main'
-      defconfig_url:
-        description: 'Link langsung ke file defconfig (raw)'
-        required: true
-        default: 'https://raw.githubusercontent.com/Artecxyz/RedPanda-kernel/main/arch/arm64/configs/gki_defconfig'
       config_changes:
         description: 'Baris CONFIG tambahan sebelum savedefconfig (opsional, satu per baris)'
         required: false
         default: ''
       output_name:
-        description: 'Nama file hasil (tanpa .config, mis: redpanda_defconfig)'
+        description: 'Nama file hasil (mis: redpanda_defconfig)'
         required: false
         default: 'redpanda_defconfig'
 
@@ -38,7 +34,7 @@ jobs:
 
       - name: Clone kernel source
         run: |
-          git clone --depth=1 "${{ github.event.inputs.kernel_repo }}" \
+          git clone --depth=1 "https://github.com/Artecxyz/${{ github.event.inputs.kernel_repo }}.git" \
             -b "${{ github.event.inputs.kernel_branch }}" kernel_workspace
 
       - name: Cache Neutron Clang
@@ -68,7 +64,7 @@ jobs:
 
       - name: Download defconfig & regenerate
         env:
-          DEFCONFIG_URL: ${{ github.event.inputs.defconfig_url }}
+          DEFCONFIG_URL: "https://raw.githubusercontent.com/Artecxyz/${{ github.event.inputs.kernel_repo }}/main/arch/arm64/configs/gki_defconfig"
           CONFIG_CHANGES: ${{ github.event.inputs.config_changes }}
         run: |
           export PATH="$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH"
