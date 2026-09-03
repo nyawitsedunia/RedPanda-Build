@@ -95,15 +95,15 @@ jobs:
           # Simpan hasil sebagai full .config (semua opsi ditulis lengkap,
           # termasuk yang nilainya sama dengan default kernel)
           OUTPUT_NAME="${{ github.event.inputs.output_name }}"
-          cp out/.config "out/${OUTPUT_NAME}.config"
+          cp out/.config "out/${OUTPUT_NAME}"
 
           echo "=== Info hasil regenerate ==="
           echo "Baris defconfig awal : $(wc -l < "$DEFCONFIG")"
-          echo "Baris full .config   : $(wc -l < "out/${OUTPUT_NAME}.config")"
+          echo "Baris full .config   : $(wc -l < "out/${OUTPUT_NAME}")"
 
       - name: Upload hasil regenerate
         uses: actions/upload-artifact@v7
         with:
           name: regenerated-defconfig
-          path: "kernel_workspace/out/${{ github.event.inputs.output_name }}.config"
+          path: "kernel_workspace/out/${{ github.event.inputs.output_name }}"
           if-no-files-found: error
