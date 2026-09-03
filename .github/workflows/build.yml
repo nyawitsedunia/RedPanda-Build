@@ -318,6 +318,13 @@ jobs:
             sed -i "/^${key}=/d" "$DEFCONFIG"
             sed -i "/^# ${key} is not set/d" "$DEFCONFIG"
             echo "${key}=${value}" >> "$DEFCONFIG"
+          
+            if grep -Fxq "${key}=${value}" "$DEFCONFIG"; then
+              echo "${key}=${value} (✅ SUCCESS)"
+            else
+              echo "${key}=${value} (❌ FAILED)" >&2
+              return 1
+            fi
           }
           
           set_config CONFIG_KSU y
