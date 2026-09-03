@@ -331,9 +331,6 @@ jobs:
           sed -i '/^CONFIG_LTO_NONE=y/{ s/^/# /; s/=y$/ is not set/; }' "$DEFCONFIG"
           set_config CONFIG_LTO_CLANG_THIN y
           set_config CONFIG_AUTOFDO_CLANG y
-
-          sed -i '/^CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y/{ s/^/# /; s/=y$/ is not set/; }' "$DEFCONFIG"
-          set_config CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3 y
           
           set_config CONFIG_KSU_SUSFS y
           set_config CONFIG_KSU_SUSFS_SUS_PATH y
